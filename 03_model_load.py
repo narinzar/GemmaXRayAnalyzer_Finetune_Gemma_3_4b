@@ -25,7 +25,7 @@ def load_model():
         print("WARNING: No GPU detected. Processing will be done on CPU.")
         cpu_only = True
     
-    # Load the model and tokenizer with Unsloth's FastModel
+    # Load the model and tokenizer with Unsloth's FastModelz
     print(f"Loading {config.MODEL_NAME} model...")
     try:
         model, tokenizer = FastModel.from_pretrained(
