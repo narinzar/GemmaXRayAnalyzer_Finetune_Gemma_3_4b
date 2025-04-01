@@ -1,29 +1,7 @@
-# Core dependencies
-torch>=2.0.0
-transformers>=4.34.0
+gradio==3.50.2
 unsloth>=2023.11.0
-trl>=0.7.4
-datasets>=2.14.0
+transformers>=4.34.0
+torch>=2.0.0
+python-dotenv>=1.0.0
 accelerate>=0.23.0
 bitsandbytes>=0.41.0
-peft>=0.5.0
-
-# Data processing
-pillow>=9.0.0
-numpy>=1.22.0
-scikit-learn>=1.0.0
-pandas>=2.0.0
-
-# Visualization and interface
-gradio>=3.40.0
-matplotlib>=3.7.0
-
-# Utilities
-python-dotenv>=1.0.0
-huggingface_hub>=0.17.0
-tqdm>=4.65.0
-
-# Optional: CUDA support
-# Note: Install appropriate CUDA version for your system
-# For example, on Google Colab:
-# !pip install torch==2.0.0+cu118 --extra-index-url https://download.pytorch.org/whl/cu118

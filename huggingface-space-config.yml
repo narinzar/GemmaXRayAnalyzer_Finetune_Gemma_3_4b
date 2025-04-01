@@ -1,0 +1,25 @@
+title: GemmaXRayAnalyzer
+emoji: 🩻
+colorFrom: blue
+colorTo: green
+sdk: gradio
+sdk_version: 3.50.2
+app_file: app.py
+pinned: false
+license: mit
+
+models:
+  - ${HF_USERNAME}/${HF_MODEL_NAME}
+  
+datasets:
+  - unsloth/Radiology_mini
+
+tags:
+  - gemma
+  - medical
+  - radiology
+  - x-ray
+  - nlp
+  - fine-tuning
+
+duplicated_from: gradio/hub-ui-template
