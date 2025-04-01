@@ -1,0 +1,18 @@
+# Hugging Face token
+# Replace with your actual token from https://huggingface.co/settings/tokens
+HF_TOKEN=your_hugging_face_token_here
+
+# Model configuration
+# You can change these settings to use different models
+MODEL_NAME=unsloth/gemma-3-4b-it
+DATASET_NAME=nih-chest-xrays/nih-chest-xrays
+
+# Training parameters
+MAX_STEPS=200
+LEARNING_RATE=1e-4
+BATCH_SIZE=1
+GRADIENT_ACCUMULATION_STEPS=8
+
+# System settings
+USE_FP16=true
+USE_4BIT=true
