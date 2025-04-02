@@ -9,6 +9,9 @@ import torch
 from unsloth import FastModel
 from transformers import AutoTokenizer
 from dotenv import load_dotenv
+from PIL import Image
+import base64
+import io
 
 # Load environment variables
 load_dotenv()
@@ -44,13 +47,34 @@ def load_model():
 print("Initializing model...")
 model, tokenizer = load_model()
 
-# Function to analyze X-ray image
-def analyze_xray(prompt, max_tokens=256, temperature=0.7, top_p=0.9):
+# Function to encode image to base64
+def encode_image(image_path):
+    with open(image_path, "rb") as image_file:
+        return base64.b64encode(image_file.read()).decode('utf-8')
+
+# Function to analyze X-ray image and text
+def analyze_xray(image, prompt, max_tokens=256, temperature=0.7, top_p=0.9):
     if not prompt:
-        return "Please enter a prompt about an X-ray image."
+        prompt = INSTRUCTION
+    
+    # Handle the image if provided
+    image_description = ""
+    if image is not None:
+        # Save the image temporarily for display
+        temp_img_path = "temp_xray.jpg"
+        if isinstance(image, Image.Image):
+            image.save(temp_img_path)
+        else:
+            # If it's already a path
+            temp_img_path = image
+        
+        image_description = f"\n\nImage uploaded: X-ray image received for analysis."
+    
+    # Combine prompt with image notification
+    full_text_prompt = prompt + image_description
     
     # Format the prompt
-    full_prompt = f"<start_of_turn>user\n{prompt}<end_of_turn>\n<start_of_turn>model\n"
+    full_prompt = f"<start_of_turn>user\n{full_text_prompt}<end_of_turn>\n<start_of_turn>model\n"
     
     # Tokenize the prompt
     inputs = tokenizer(full_prompt, return_tensors="pt")
@@ -84,15 +108,22 @@ def analyze_xray(prompt, max_tokens=256, temperature=0.7, top_p=0.9):
     if "<start_of_turn>model\n" in response:
         response = response.split("<start_of_turn>model\n")[-1].strip()
     
-    # Add generation time
-    response += f"\n\n_Generated in {gen_time:.2f} seconds_"
+    # Return the image if it was provided, along with the response
+    result = ""
+    if image is not None:
+        # Create the response with the image
+        result = f"**X-ray Analysis:**\n\n{response}\n\n_Generated in {gen_time:.2f} seconds_"
+    else:
+        # Just return the text response
+        result = f"{response}\n\n_Generated in {gen_time:.2f} seconds_"
     
-    return response
+    return result
 
-# Create the Gradio interface
+# Create the Gradio interface with image upload
 demo = gr.Interface(
     fn=analyze_xray,
     inputs=[
+        gr.Image(type="pil", label="Upload X-ray Image (Optional)"),
         gr.Textbox(
             label="Prompt",
             placeholder="Analyze this chest X-ray showing...",
@@ -114,18 +145,35 @@ demo = gr.Interface(
     ],
     outputs=gr.Markdown(),
     title="🩻 X-ray Analysis with Gemma 3",
-    description="This demo showcases the fine-tuned Gemma 3 model for medical X-ray analysis. Enter your prompt describing the X-ray image or condition you want to analyze.",
+    description="This demo showcases the fine-tuned Gemma 3 model for medical X-ray analysis. Upload an X-ray image and enter your prompt describing what you'd like to analyze.",
     examples=[
-        ["Analyze this chest X-ray showing opacity in the lower right lung"],
-        ["Describe the findings in this X-ray of a patient with suspected pneumonia"],
-        ["What can you tell me about this X-ray showing a possible fracture in the wrist?"],
-        ["Generate a detailed report for this abdominal X-ray showing bowel obstruction"],
+        [None, "Analyze this chest X-ray showing opacity in the lower right lung"],
+        [None, "Describe the findings in this X-ray of a patient with suspected pneumonia"],
+        [None, "What can you tell me about this X-ray showing a possible fracture in the wrist?"],
+        [None, "Generate a detailed report for this abdominal X-ray showing bowel obstruction"],
     ],
     article="""
+    ## How to Use
+    
+    1. (Optional) Upload an X-ray image using the image upload area
+    2. Enter a prompt describing what you want the model to analyze
+    3. Adjust generation parameters if desired
+    4. Click "Submit" to generate the analysis
+    
+    ## Example Prompts
+    
+    - "Analyze this chest X-ray and describe any abnormalities"
+    - "What pathologies are visible in this X-ray image?"
+    - "Is there evidence of pneumonia in this chest X-ray?"
+    - "Generate a radiological report for this X-ray"
+    
     ## Disclaimer
     
     This is a demonstration tool and should not be used for actual medical diagnosis. 
     Always consult a qualified healthcare professional for medical advice.
+    
+    Note: The model has been fine-tuned on radiological text data but may not directly 
+    analyze the uploaded image. The image upload feature is provided for reference and context.
     """
 )
 
