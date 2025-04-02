@@ -6,6 +6,8 @@ import os
 import json
 import torch
 from datasets import Dataset
+from unsloth import FastModel
+from transformers import AutoTokenizer
 import config
 
 def format_conversation(caption, instruction=None):
@@ -20,11 +22,18 @@ def format_conversation(caption, instruction=None):
 
 def prepare_datasets():
     """Prepare training and validation datasets"""
-    # Check if LoRA model checkpoint exists
-    lora_checkpoint_path = os.path.join(config.CHECKPOINT_DIR, "lora_model.pt")
-    if not os.path.exists(lora_checkpoint_path):
-        raise FileNotFoundError(f"LoRA model checkpoint not found at {lora_checkpoint_path}. "
+    # Check if LoRA configuration exists
+    lora_config_path = os.path.join(config.CHECKPOINT_DIR, "lora_config.json")
+    model_info_path = os.path.join(config.CHECKPOINT_DIR, "model_info.json")
+    lora_tokenizer_dir = os.path.join(config.CHECKPOINT_DIR, "lora_tokenizer")
+    
+    if not os.path.exists(lora_config_path):
+        raise FileNotFoundError(f"LoRA configuration not found at {lora_config_path}. "
                               f"Please run 04_lora_config.py first.")
+    
+    if not os.path.exists(model_info_path):
+        raise FileNotFoundError(f"Model info not found at {model_info_path}. "
+                              f"Please run 03_model_load.py first.")
     
     # Check if dataset splits exist
     dataset_path = os.path.join(config.DATA_DIR, "dataset_splits.json")
@@ -32,13 +41,38 @@ def prepare_datasets():
         raise FileNotFoundError(f"Dataset splits not found at {dataset_path}. "
                               f"Please run 01_data_load.py first.")
     
+    # Load model configurations
+    with open(model_info_path, 'r') as f:
+        model_info = json.load(f)
+    
+    with open(lora_config_path, 'r') as f:
+        lora_config = json.load(f)
+    
+    model_config = model_info["model_config"]
+    cpu_only = model_config.get("cpu_only", False)
+    
     # Load model and tokenizer
-    print(f"Loading model and tokenizer from {lora_checkpoint_path}...")
-    checkpoint = torch.load(lora_checkpoint_path)
-    model = checkpoint["model"]
-    tokenizer = checkpoint["tokenizer"]
-    lora_config = checkpoint.get("lora_config", {})
-    cpu_only = checkpoint.get("cpu_only", False)
+    print(f"Loading model and tokenizer...")
+    model, tokenizer = FastModel.from_pretrained(
+        model_name=model_config["model_name"],
+        max_seq_length=model_config["max_seq_length"],
+        load_in_4bit=model_config["load_in_4bit"],
+        dtype=None,
+        use_gradient_checkpointing=model_config["use_gradient_checkpointing"]
+    )
+    
+    # Apply LoRA configuration
+    model = FastModel.get_peft_model(
+        model,
+        finetune_language_layers=lora_config["finetune_language_layers"],
+        finetune_attention_modules=lora_config["finetune_attention_modules"],
+        finetune_mlp_modules=lora_config["finetune_mlp_modules"],
+        r=lora_config["r"],
+        lora_alpha=lora_config["lora_alpha"],
+        lora_dropout=lora_config["lora_dropout"],
+        bias=lora_config["bias"],
+        random_state=lora_config["random_state"],
+    )
     
     # Load dataset splits
     print(f"Loading dataset splits from {dataset_path}...")
@@ -58,6 +92,9 @@ def prepare_datasets():
     val_dataset = Dataset.from_list(val_formatted)
     
     print(f"Prepared {len(train_dataset)} training samples and {len(val_dataset)} validation samples")
+    
+    # Create data directory if it doesn't exist
+    os.makedirs(config.DATA_DIR, exist_ok=True)
     
     # Save formatted datasets
     train_dataset.save_to_disk(os.path.join(config.DATA_DIR, "train_dataset"))
