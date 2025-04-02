@@ -32,7 +32,7 @@ def push_to_space():
     files_to_include = [
         "app.py",  # Gradio app
         "huggingface-space-config.yml",  # Space configuration
-        "requirements_space.txt",  # Dependencies for the Space
+        "requirements.txt",  # Dependencies for the Space
     ]
     
     # Check if all required files exist
@@ -42,8 +42,8 @@ def push_to_space():
             return False
     
     # Create requirements_space.txt if it doesn't exist
-    if not os.path.exists("requirements_space.txt"):
-        with open("requirements_space.txt", "w") as f:
+    if not os.path.exists("requirements.txt"):
+        with open("requirements.txt", "w") as f:
             f.write("gradio>=3.50.2\n")
             f.write("unsloth>=2023.11.0\n")
             f.write("transformers>=4.34.0\n")
