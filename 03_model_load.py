@@ -1,6 +1,6 @@
 #!/usr/bin/env python
-# 03_model_load.py
-# Purpose: Load the Gemma 3 model and save it for later use
+# 03_model_load_fixed.py
+# Purpose: Load the Gemma 3 model and save model info (but not the model itself)
 
 import os
 import json
@@ -9,8 +9,11 @@ from unsloth import FastModel
 import config
 from dotenv import load_dotenv
 
+# Fix for HybridCache float error
+os.environ["DISABLE_UNSLOTH_CACHE"] = "1"
+
 def load_model():
-    """Load the base Gemma 3 model and save it for later use"""
+    """Load the base Gemma 3 model and save its configuration info"""
     # Create checkpoint directory
     os.makedirs(config.CHECKPOINT_DIR, exist_ok=True)
     
@@ -40,8 +43,7 @@ def load_model():
         print(f"Error loading model: {e}")
         raise
     
-    # Instead of trying to save the model directly, we'll save its configuration
-    # and reload it in the evaluation script
+    # Save model config for future reference (don't try to save the model itself)
     model_config = {
         "model_name": config.MODEL_NAME,
         "max_seq_length": config.SEQUENCE_LENGTH,
@@ -50,28 +52,28 @@ def load_model():
         "cpu_only": cpu_only
     }
     
-    # Save model configuration
-    with open(os.path.join(config.CHECKPOINT_DIR, "base_model_config.json"), "w") as f:
-        json.dump(model_config, f, indent=2)
+    # Get model info without saving the actual model
+    vocab_size = len(tokenizer.get_vocab()) if hasattr(tokenizer, 'get_vocab') else None
     
-    # Save tokenizer separately
-    tokenizer_path = os.path.join(config.CHECKPOINT_DIR, "base_tokenizer")
-    os.makedirs(tokenizer_path, exist_ok=True)
-    tokenizer.save_pretrained(tokenizer_path)
+    # Save just the model info to a JSON file
+    model_info = {
+        "model_config": model_config,
+        "tokenizer_vocab_size": vocab_size,
+        "model_type": type(model).__name__,
+        "cpu_only": cpu_only
+    }
     
-    print(f"Base model configuration saved to {os.path.join(config.CHECKPOINT_DIR, 'base_model_config.json')}")
-    print(f"Base tokenizer saved to {tokenizer_path}")
-    print(f"Tokenizer vocabulary size: {len(tokenizer.vocab) if hasattr(tokenizer, 'vocab') else None}")
+    # Save to JSON file
+    with open(os.path.join(config.CHECKPOINT_DIR, "model_info.json"), "w") as f:
+        json.dump(model_info, f, indent=2)
     
-    # Now we need to create a marker file that the evaluation script will recognize
-    # This file indicates that the base model loading has been completed
-    with open(os.path.join(config.CHECKPOINT_DIR, "base_model.marker"), "w") as f:
-        f.write("Base model loading completed at: " + time.strftime("%Y-%m-%d %H:%M:%S"))
+    print(f"Model info saved to {os.path.join(config.CHECKPOINT_DIR, 'model_info.json')}")
+    print(f"Tokenizer vocabulary size: {vocab_size}")
     
     return model, tokenizer, cpu_only
 
 def main():
-    """Load model and save its configuration"""
+    """Load model and save its info"""
     # Load environment variables
     load_dotenv()
     
@@ -86,11 +88,10 @@ def main():
         os.environ["HF_TOKEN"] = hf_token
         print("Hugging Face token loaded from .env file")
     
-    # Load model and save its configuration
+    # Load model
     model, tokenizer, cpu_only = load_model()
     
-    print("Model loading and configuration saving completed successfully")
+    print("Model loading completed successfully")
 
 if __name__ == "__main__":
-    import time
     main()
