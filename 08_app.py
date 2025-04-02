@@ -1,6 +1,6 @@
 #!/usr/bin/env python
-# app.py
-# Purpose: Gradio app for the Hugging Face Space
+# 08_app.py
+# Purpose: Gradio app for X-ray analysis with Gemma 3
 
 import os
 import time
@@ -21,14 +21,11 @@ MODEL_ID = f"{HF_USERNAME}/{HF_MODEL_NAME}"
 # Demo instruction/prompt
 INSTRUCTION = "You are an expert radiologist. Analyze this X-ray image and describe what you see in detail."
 
-# Load model and tokenizer
-@gr.on_startup
-def startup():
-    global model, tokenizer
-    
+# Function to load model and tokenizer
+def load_model():
     print(f"Loading model from {MODEL_ID}...")
     try:
-        # Try to load from HF_MODEL_NAME
+        # Try to load from specified model name
         model = FastModel.from_pretrained(MODEL_ID)
         tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
         print("Model loaded successfully from Hugging Face Hub")
@@ -40,6 +37,12 @@ def startup():
         model = FastModel.from_pretrained("unsloth/gemma-3-4b-it")
         tokenizer = AutoTokenizer.from_pretrained("unsloth/gemma-3-4b-it")
         print("Base Gemma model loaded successfully as fallback")
+    
+    return model, tokenizer
+
+# Load model at startup
+print("Initializing model...")
+model, tokenizer = load_model()
 
 # Function to analyze X-ray image
 def analyze_xray(prompt, max_tokens=256, temperature=0.7, top_p=0.9):
@@ -87,72 +90,44 @@ def analyze_xray(prompt, max_tokens=256, temperature=0.7, top_p=0.9):
     return response
 
 # Create the Gradio interface
-with gr.Blocks(title="X-ray Analysis with Gemma 3") as demo:
-    gr.Markdown(
-        """
-        # 🩻 X-ray Analysis with Gemma 3
-        
-        This demo showcases the fine-tuned Gemma 3 model for medical X-ray analysis.
-        
-        Enter your prompt describing the X-ray image or condition you want to analyze.
-        """
-    )
+demo = gr.Interface(
+    fn=analyze_xray,
+    inputs=[
+        gr.Textbox(
+            label="Prompt",
+            placeholder="Analyze this chest X-ray showing...",
+            value=INSTRUCTION,
+            lines=4
+        ),
+        gr.Slider(
+            minimum=50, maximum=512, value=256, step=1,
+            label="Maximum Tokens"
+        ),
+        gr.Slider(
+            minimum=0.1, maximum=1.5, value=0.7, step=0.1,
+            label="Temperature"
+        ),
+        gr.Slider(
+            minimum=0.1, maximum=1.0, value=0.9, step=0.1,
+            label="Top-p"
+        )
+    ],
+    outputs=gr.Markdown(),
+    title="🩻 X-ray Analysis with Gemma 3",
+    description="This demo showcases the fine-tuned Gemma 3 model for medical X-ray analysis. Enter your prompt describing the X-ray image or condition you want to analyze.",
+    examples=[
+        ["Analyze this chest X-ray showing opacity in the lower right lung"],
+        ["Describe the findings in this X-ray of a patient with suspected pneumonia"],
+        ["What can you tell me about this X-ray showing a possible fracture in the wrist?"],
+        ["Generate a detailed report for this abdominal X-ray showing bowel obstruction"],
+    ],
+    article="""
+    ## Disclaimer
     
-    with gr.Row():
-        with gr.Column():
-            prompt = gr.Textbox(
-                label="Prompt",
-                placeholder="Analyze this chest X-ray showing...",
-                value=INSTRUCTION,
-                lines=4
-            )
-            with gr.Row():
-                max_tokens = gr.Slider(
-                    minimum=50, maximum=512, value=256, step=1,
-                    label="Maximum Tokens"
-                )
-                temperature = gr.Slider(
-                    minimum=0.1, maximum=1.5, value=0.7, step=0.1,
-                    label="Temperature"
-                )
-                top_p = gr.Slider(
-                    minimum=0.1, maximum=1.0, value=0.9, step=0.1,
-                    label="Top-p"
-                )
-            
-            submit_btn = gr.Button("Generate Analysis", variant="primary")
-            clear_btn = gr.Button("Clear")
-        
-        with gr.Column():
-            output = gr.Markdown(label="Analysis Result")
-    
-    submit_btn.click(
-        fn=analyze_xray,
-        inputs=[prompt, max_tokens, temperature, top_p],
-        outputs=output
-    )
-    
-    clear_btn.click(
-        fn=lambda: [gr.update(value=INSTRUCTION), gr.update(value="")],
-        inputs=None,
-        outputs=[prompt, output]
-    )
-    
-    gr.Markdown(
-        """
-        ## Example Prompts
-        
-        - "Analyze this chest X-ray showing opacity in the lower right lung"
-        - "Describe the findings in this X-ray of a patient with suspected pneumonia"
-        - "What can you tell me about this X-ray showing a possible fracture in the wrist?"
-        - "Generate a detailed report for this abdominal X-ray showing bowel obstruction"
-        
-        ## Disclaimer
-        
-        This is a demonstration tool and should not be used for actual medical diagnosis. 
-        Always consult a qualified healthcare professional for medical advice.
-        """
-    )
+    This is a demonstration tool and should not be used for actual medical diagnosis. 
+    Always consult a qualified healthcare professional for medical advice.
+    """
+)
 
 # Launch the app
 if __name__ == "__main__":
