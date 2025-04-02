@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # 03_model_load.py
-# Purpose: Load the Gemma 3 model and save its configuration for later use
+# Purpose: Load the Gemma 3 model and save it for later use
 
 import os
 import json
@@ -10,7 +10,7 @@ import config
 from dotenv import load_dotenv
 
 def load_model():
-    """Load the base Gemma 3 model and save its configuration"""
+    """Load the base Gemma 3 model and save it for later use"""
     # Create checkpoint directory
     os.makedirs(config.CHECKPOINT_DIR, exist_ok=True)
     
@@ -25,7 +25,7 @@ def load_model():
         print("WARNING: No GPU detected. Processing will be done on CPU.")
         cpu_only = True
     
-    # Load the model and tokenizer with Unsloth's FastModelz
+    # Load the model and tokenizer with Unsloth's FastModel
     print(f"Loading {config.MODEL_NAME} model...")
     try:
         model, tokenizer = FastModel.from_pretrained(
@@ -40,7 +40,8 @@ def load_model():
         print(f"Error loading model: {e}")
         raise
     
-    # Save model config for future reference without trying to pickle the model
+    # Instead of trying to save the model directly, we'll save its configuration
+    # and reload it in the evaluation script
     model_config = {
         "model_name": config.MODEL_NAME,
         "max_seq_length": config.SEQUENCE_LENGTH,
@@ -49,42 +50,24 @@ def load_model():
         "cpu_only": cpu_only
     }
     
-    # Extract tokenizer info
-    tokenizer_info = {
-        "vocab_size": len(tokenizer.vocab) if hasattr(tokenizer, 'vocab') else None,
-        "tokenizer_name": type(tokenizer).__name__
-    }
+    # Save model configuration
+    with open(os.path.join(config.CHECKPOINT_DIR, "base_model_config.json"), "w") as f:
+        json.dump(model_config, f, indent=2)
     
-    # Save the model configuration to a JSON file
-    model_info = {
-        "model_config": model_config,
-        "tokenizer_info": tokenizer_info,
-        "model_type": type(model).__name__,
-        "trainable_params": sum(p.numel() for p in model.parameters() if p.requires_grad),
-        "total_params": sum(p.numel() for p in model.parameters())
-    }
+    # Save tokenizer separately
+    tokenizer_path = os.path.join(config.CHECKPOINT_DIR, "base_tokenizer")
+    os.makedirs(tokenizer_path, exist_ok=True)
+    tokenizer.save_pretrained(tokenizer_path)
     
-    # Save the configuration as JSON
-    with open(os.path.join(config.CHECKPOINT_DIR, "model_info.json"), "w") as f:
-        json.dump(model_info, f, indent=2)
+    print(f"Base model configuration saved to {os.path.join(config.CHECKPOINT_DIR, 'base_model_config.json')}")
+    print(f"Base tokenizer saved to {tokenizer_path}")
+    print(f"Tokenizer vocabulary size: {len(tokenizer.vocab) if hasattr(tokenizer, 'vocab') else None}")
     
-    print(f"Model configuration saved to {os.path.join(config.CHECKPOINT_DIR, 'model_info.json')}")
+    # Now we need to create a marker file that the evaluation script will recognize
+    # This file indicates that the base model loading has been completed
+    with open(os.path.join(config.CHECKPOINT_DIR, "base_model.marker"), "w") as f:
+        f.write("Base model loading completed at: " + time.strftime("%Y-%m-%d %H:%M:%S"))
     
-    if hasattr(tokenizer, "save_pretrained"):
-        # Save the tokenizer files directly
-        tokenizer_dir = os.path.join(config.CHECKPOINT_DIR, "tokenizer")
-        os.makedirs(tokenizer_dir, exist_ok=True)
-        tokenizer.save_pretrained(tokenizer_dir)
-        print(f"Tokenizer saved to {tokenizer_dir}")
-    
-    print(f"Tokenizer vocabulary size: {tokenizer_info['vocab_size']}")
-    
-    if model_info["trainable_params"] > 0:
-        print(f"Model has {model_info['trainable_params']:,} trainable parameters " 
-              f"out of {model_info['total_params']:,} total parameters "
-              f"({model_info['trainable_params']/model_info['total_params']*100:.2f}%)")
-    
-    # Return the model and tokenizer for potential further processing
     return model, tokenizer, cpu_only
 
 def main():
@@ -106,7 +89,8 @@ def main():
     # Load model and save its configuration
     model, tokenizer, cpu_only = load_model()
     
-    print("Model loading completed successfully")
+    print("Model loading and configuration saving completed successfully")
 
 if __name__ == "__main__":
+    import time
     main()

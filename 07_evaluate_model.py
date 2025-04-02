@@ -13,6 +13,7 @@ from datasets import load_from_disk
 from transformers import AutoTokenizer
 from unsloth import FastModel
 import config
+import time
 
 def load_test_samples():
     """Load test samples from the dataset splits"""
@@ -30,17 +31,41 @@ def load_test_samples():
     return test_samples
 
 def load_base_model():
-    """Load the base model for comparison"""
-    base_checkpoint_path = os.path.join(config.CHECKPOINT_DIR, "base_model.pt")
-    if not os.path.exists(base_checkpoint_path):
-        raise FileNotFoundError(f"Base model not found at {base_checkpoint_path}. "
+    """Load the base model using configuration saved in 03_model_load.py"""
+    # Check for marker file to ensure base model loading was completed
+    marker_file = os.path.join(config.CHECKPOINT_DIR, "base_model.marker")
+    config_file = os.path.join(config.CHECKPOINT_DIR, "base_model_config.json")
+    tokenizer_dir = os.path.join(config.CHECKPOINT_DIR, "base_tokenizer")
+    
+    if not os.path.exists(marker_file) or not os.path.exists(config_file):
+        raise FileNotFoundError(f"Base model configuration not found. "
                               f"Please run 03_model_load.py first.")
     
-    print(f"Loading base model from {base_checkpoint_path}...")
-    checkpoint = torch.load(base_checkpoint_path)
-    model = checkpoint["model"]
-    tokenizer = checkpoint["tokenizer"]
-    cpu_only = checkpoint.get("cpu_only", False)
+    # Load the model configuration
+    with open(config_file, "r") as f:
+        model_config = json.load(f)
+    
+    print(f"Loading base model using configuration...")
+    
+    # Extract configuration parameters
+    model_name = model_config.get("model_name", config.MODEL_NAME)
+    max_seq_length = model_config.get("max_seq_length", config.SEQUENCE_LENGTH)
+    load_in_4bit = model_config.get("load_in_4bit", config.USE_4BIT)
+    cpu_only = model_config.get("cpu_only", False)
+    
+    # Set device - for 8-bit models, we need to specify the device during loading
+    device = "cuda" if torch.cuda.is_available() and not cpu_only else "cpu"
+    
+    # Load the model and tokenizer directly to the appropriate device
+    model, tokenizer = FastModel.from_pretrained(
+        model_name=model_name,
+        max_seq_length=max_seq_length,
+        load_in_4bit=load_in_4bit and not cpu_only,
+        use_gradient_checkpointing="unsloth",
+        device_map="auto"  # Let the model decide how to map to available devices
+    )
+    
+    print(f"Base model {model_name} loaded successfully")
     
     return model, tokenizer, cpu_only
 
@@ -50,12 +75,16 @@ def load_finetuned_model():
         raise FileNotFoundError(f"Fine-tuned model not found at {config.MODEL_OUTPUT_DIR}. "
                               f"Please run 06_train_model.py first.")
     
-    print(f"Loading fine-tuned model from {config.MODEL_OUTPUT_DIR}...")
-    model = FastModel.from_pretrained(config.MODEL_OUTPUT_DIR)
-    tokenizer = AutoTokenizer.from_pretrained(config.MODEL_OUTPUT_DIR)
-    
     # Determine CPU/GPU mode
     cpu_only = not torch.cuda.is_available()
+    
+    print(f"Loading fine-tuned model from {config.MODEL_OUTPUT_DIR}...")
+    model = FastModel.from_pretrained(
+        config.MODEL_OUTPUT_DIR,
+        load_in_4bit=config.USE_4BIT and not cpu_only,
+        device_map="auto"  # Let the model decide how to map to available devices
+    )
+    tokenizer = AutoTokenizer.from_pretrained(config.MODEL_OUTPUT_DIR)
     
     return model, tokenizer, cpu_only
 
@@ -67,7 +96,9 @@ def evaluate_model(model, tokenizer, test_samples, model_name="model", cpu_only=
     
     # Set device
     device = "cuda" if torch.cuda.is_available() and not cpu_only else "cpu"
-    model = model.to(device)
+    
+    # NOTE: We don't move the model to any device explicitly as this is not supported for 8-bit models
+    # The model should already be on the correct device from loading
     
     # Initialize Rouge scorer
     scorer = rouge_scorer.RougeScorer(['rouge1', 'rouge2', 'rougeL'], use_stemmer=True)
@@ -87,8 +118,10 @@ def evaluate_model(model, tokenizer, test_samples, model_name="model", cpu_only=
         instruction = config.INSTRUCTION
         prompt = f"<start_of_turn>user\n{instruction}<end_of_turn>\n<start_of_turn>model\n"
         
-        # Tokenize the prompt
-        inputs = tokenizer(prompt, return_tensors="pt").to(device)
+        # Tokenize the prompt and move to device
+        inputs = tokenizer(prompt, return_tensors="pt")
+        # Move inputs to the same device as the model
+        inputs = {k: v.to(model.device) for k, v in inputs.items()}
         
         # Generate text
         start_time = time.time()
@@ -230,8 +263,6 @@ def compare_models(base_results, finetuned_results, base_metrics, finetuned_metr
 
 def main():
     """Evaluate and compare models"""
-    import time
-    
     # Create output directories
     os.makedirs(config.RESULTS_DIR, exist_ok=True)
     os.makedirs(config.FIGURES_DIR, exist_ok=True)
