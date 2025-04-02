@@ -2,18 +2,20 @@
 # 07_evaluate_model.py
 # Purpose: Evaluate the fine-tuned model on the test set
 
+# Make sure unsloth is imported first to avoid warnings
+import unsloth
 import os
 import json
 import torch
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
+import time
 from rouge_score import rouge_scorer
 from datasets import load_from_disk
 from transformers import AutoTokenizer
 from unsloth import FastModel
 import config
-import time
 
 def load_test_samples():
     """Load test samples from the dataset splits"""
@@ -35,7 +37,6 @@ def load_base_model():
     # Check for marker file to ensure base model loading was completed
     marker_file = os.path.join(config.CHECKPOINT_DIR, "base_model.marker")
     config_file = os.path.join(config.CHECKPOINT_DIR, "base_model_config.json")
-    tokenizer_dir = os.path.join(config.CHECKPOINT_DIR, "base_tokenizer")
     
     if not os.path.exists(marker_file) or not os.path.exists(config_file):
         raise FileNotFoundError(f"Base model configuration not found. "
@@ -52,9 +53,6 @@ def load_base_model():
     max_seq_length = model_config.get("max_seq_length", config.SEQUENCE_LENGTH)
     load_in_4bit = model_config.get("load_in_4bit", config.USE_4BIT)
     cpu_only = model_config.get("cpu_only", False)
-    
-    # Set device - for 8-bit models, we need to specify the device during loading
-    device = "cuda" if torch.cuda.is_available() and not cpu_only else "cpu"
     
     # Load the model and tokenizer directly to the appropriate device
     model, tokenizer = FastModel.from_pretrained(
@@ -79,12 +77,21 @@ def load_finetuned_model():
     cpu_only = not torch.cuda.is_available()
     
     print(f"Loading fine-tuned model from {config.MODEL_OUTPUT_DIR}...")
-    model = FastModel.from_pretrained(
+    
+    # Load model and tokenizer
+    model_result = FastModel.from_pretrained(
         config.MODEL_OUTPUT_DIR,
         load_in_4bit=config.USE_4BIT and not cpu_only,
         device_map="auto"  # Let the model decide how to map to available devices
     )
-    tokenizer = AutoTokenizer.from_pretrained(config.MODEL_OUTPUT_DIR)
+    
+    # Handle the case where model is returned as a tuple
+    if isinstance(model_result, tuple) and len(model_result) == 2:
+        model, tokenizer = model_result
+    else:
+        model = model_result
+        # If model wasn't returned as a tuple with tokenizer, load tokenizer separately
+        tokenizer = AutoTokenizer.from_pretrained(config.MODEL_OUTPUT_DIR)
     
     return model, tokenizer, cpu_only
 
@@ -94,11 +101,9 @@ def evaluate_model(model, tokenizer, test_samples, model_name="model", cpu_only=
     if num_samples is not None:
         test_samples = test_samples[:min(num_samples, len(test_samples))]
     
-    # Set device
-    device = "cuda" if torch.cuda.is_available() and not cpu_only else "cpu"
-    
-    # NOTE: We don't move the model to any device explicitly as this is not supported for 8-bit models
-    # The model should already be on the correct device from loading
+    # Set device for inputs
+    device = next(model.parameters()).device
+    print(f"Model is on device: {device}")
     
     # Initialize Rouge scorer
     scorer = rouge_scorer.RougeScorer(['rouge1', 'rouge2', 'rougeL'], use_stemmer=True)
@@ -120,8 +125,7 @@ def evaluate_model(model, tokenizer, test_samples, model_name="model", cpu_only=
         
         # Tokenize the prompt and move to device
         inputs = tokenizer(prompt, return_tensors="pt")
-        # Move inputs to the same device as the model
-        inputs = {k: v.to(model.device) for k, v in inputs.items()}
+        inputs = {k: v.to(device) for k, v in inputs.items()}
         
         # Generate text
         start_time = time.time()
